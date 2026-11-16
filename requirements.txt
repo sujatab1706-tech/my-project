@@ -5,4 +5,7 @@ pillow>=10.1
 requests
 tqdm
 matplotlib
-# Later steps (model, evaluation, API) will add: tensorflow, scikit-learn, fastapi, uvicorn, evidently
+# Step 2 (models)
+tensorflow
+pytesseract      # also needs the Tesseract program: apt-get install tesseract-ocr / brew install tesseract
+# Later steps (evaluation, API) will add: scikit-learn, fastapi, uvicorn, evidently
