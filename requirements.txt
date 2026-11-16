@@ -1,0 +1,8 @@
+# Step 1 (data)
+numpy
+pandas
+pillow>=10.1
+requests
+tqdm
+matplotlib
+# Later steps (model, evaluation, API) will add: tensorflow, scikit-learn, fastapi, uvicorn, evidently
