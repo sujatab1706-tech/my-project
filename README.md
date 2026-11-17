@@ -17,7 +17,7 @@ Everything runs free, on Google Colab or a laptop. No AWS account is needed.
 
 1. **Data** ✅: clean photos from [Amazon Berkeley Objects](https://amazon-berkeley-objects.s3.amazonaws.com/index.html) (CC BY-NC 4.0), with rule violations added by code so every label is known.
 2. **Models** ✅: simple rules and OCR as baselines, then a MobileNetV2 transfer-learning CNN with one output per label.
-3. **Evaluation**: precision, recall, F1 and a confusion matrix per label, plus a decision threshold tuned per label.
+3. **Evaluation** ✅: precision, recall, F1 and a confusion matrix per label, plus a decision threshold tuned per label.
 4. **Deployment and monitoring**: FastAPI endpoint, Docker, GitHub Actions tests, Evidently to watch how often each flag fires.
 
 ## Step 1: build the dataset
@@ -65,6 +65,29 @@ Test-set accuracy from one run (3,626 images; your numbers will vary a little):
 Each run saves the model (`results/cnn_*.keras`), its learning curve (`results/history_*.csv`) and per-image probabilities
 (`results/*_predictions.csv`) for Step 3. `results/` is git-ignored.
 
+## Step 3: evaluate properly
+
+Open `notebooks/03_evaluate.ipynb` (outputs are saved, so you can read it on GitHub). It covers confusion matrices, precision/recall/F1 per label,
+choosing thresholds on the validation set (saved to `results/thresholds.json`), multi-label scores, a **harder test set** and Grad-CAM heatmaps.
+
+```bash
+python src/make_hard_test.py --processed data/processed --out data/hard_test   # subtle violations on unseen products
+python src/predict.py --data data/hard_test --models results --out results/hard
+```
+
+MobileNetV2, test set vs hard test set (best-F1 thresholds):
+
+| Label | Set | Precision | Recall | F1 |
+|---|---|---|---|---|
+| TLGW | normal test | 0.92 | 0.91 | 0.92 |
+| TLGW | hard test | 0.96 | **0.74** | 0.84 |
+| NWB | normal test | 0.94 | 0.97 | 0.96 |
+| NWB | hard test | 0.85 | **0.34** | 0.49 |
+
+On the hard set the CNN misses most off-white backgrounds and tiny corner text, because it never saw them in training.
+Accuracy still looked fine (0.87 for NWB), and only recall showed the problem. Next fixes: add these cases to the training data, combine
+the CNN with a stricter white-border rule (`tol=6` catches 98% of off-white backgrounds), then confirm on a fresh hold-out set.
+
 ## Project layout
 
 ```
@@ -74,9 +97,14 @@ src/
   rules.py             # hand-written baseline rules (no ML)
   baselines.py         # rule (NWB) + OCR (TLGW) predictions
   train_cnn.py         # small CNN or MobileNetV2, 2 sigmoid outputs
+  evaluate.py          # confusion matrix, precision/recall/F1, thresholds, multi-label scores
+  make_hard_test.py    # subtle violations: off-white, faint watermark, tiny text
+  predict.py           # run saved models + baselines on any labelled folder
+  gradcam.py           # heatmap of where the CNN looks
 notebooks/
   01_build_dataset.ipynb
   02_train_models.ipynb
+  03_evaluate.ipynb
 ```
 
 ---
