@@ -18,7 +18,7 @@ Everything runs free, on Google Colab or a laptop. No AWS account is needed.
 1. **Data** ✅: clean photos from [Amazon Berkeley Objects](https://amazon-berkeley-objects.s3.amazonaws.com/index.html) (CC BY-NC 4.0), with rule violations added by code so every label is known.
 2. **Models** ✅: simple rules and OCR as baselines, then a MobileNetV2 transfer-learning CNN with one output per label.
 3. **Evaluation** ✅: precision, recall, F1 and a confusion matrix per label, plus a decision threshold tuned per label.
-4. **Deployment and monitoring**: FastAPI endpoint, Docker, GitHub Actions tests, Evidently to watch how often each flag fires.
+4. **Deployment and monitoring** ✅: FastAPI endpoint, Docker, GitHub Actions tests, Evidently to watch how often each flag fires.
 
 ## Step 1: build the dataset
 
@@ -88,6 +88,44 @@ On the hard set the CNN misses most off-white backgrounds and tiny corner text, 
 Accuracy still looked fine (0.87 for NWB), and only recall showed the problem. Next fixes: add these cases to the training data, combine
 the CNN with a stricter white-border rule (`tol=6` catches 98% of off-white backgrounds), then confirm on a fresh hold-out set.
 
+## Step 4: deploy and monitor
+
+Open `notebooks/04_deploy_and_monitor.ipynb` (runs on Colab, no Docker needed) or run it for real:
+
+```bash
+pip install -r requirements-api.txt
+uvicorn api.app:app --reload                 # open http://127.0.0.1:8000/docs and try POST /predict
+# or with Docker
+docker build -t image-compliance .
+docker run -p 8000:8000 image-compliance
+```
+
+`POST /predict` with a photo returns, for example (an off-white background the CNN misses but the rule catches):
+
+```json
+{"tlgw": {"flag": false, "probability": 0.0241, "threshold": 0.4722},
+ "nwb":  {"flag": true, "probability": 0.02, "threshold": 0.1476, "cnn_flag": false, "rule_flag": true},
+ "compliant": false,
+ "image": {"width": 224, "height": 224, "brightness": 0.887, "border_white_fraction": 0.839},
+ "latency_ms": 71.8}
+```
+
+- **Decision:** TLGW = CNN ≥ tuned threshold. NWB = CNN **or** the strict white-border rule (`tol=6`), because Step 3 showed the CNN misses off-white backgrounds.
+- **Model:** `models/cnn_mobilenet.keras` (MobileNetV2 from Step 2) and `models/thresholds.json` (from Step 3) are committed so the API runs out of the box.
+- **Logging:** every prediction is appended to `logs/predictions.csv` (numbers only, never the photo). `GET /stats` shows live flag rates.
+- **Tests and CI:** `pytest` (API tests use a tiny fake model) plus a GitHub Actions job that builds the Docker image and smoke-tests it with the real model.
+- **Monitoring:** `monitoring/monitor.py` compares the log with `monitoring/reference.csv` (the model run over validation images). It checks flag rates and uses Evidently data drift on the probabilities, brightness and white-border share.
+
+```bash
+python monitoring/simulate_traffic.py --folder data/hard_test/images --limit 200   # with the API running
+python monitoring/monitor.py --current logs/predictions.csv                       # prints alerts, writes an HTML report
+```
+
+With normal photos nothing fires. With the hard test set, brightness, border whiteness and NWB probability all drift, and the NWB flag rate drops from 38% to 20%.
+The monitor raises an alarm without knowing any true labels.
+
+Sample photos in `samples/` are derived from [Amazon Berkeley Objects](https://amazon-berkeley-objects.s3.amazonaws.com/index.html) (CC BY-NC 4.0).
+
 ## Project layout
 
 ```
@@ -101,10 +139,17 @@ src/
   make_hard_test.py    # subtle violations: off-white, faint watermark, tiny text
   predict.py           # run saved models + baselines on any labelled folder
   gradcam.py           # heatmap of where the CNN looks
+  inference.py         # Predictor used by the API: CNN + rule -> flags
+api/app.py             # FastAPI: /predict, /health, /stats
+models/                # trained MobileNetV2 + thresholds
+monitoring/            # reference data, traffic simulator, Evidently monitor
+tests/                 # pytest: API + rules
+Dockerfile, requirements-api.txt, .github/workflows/ci.yml
 notebooks/
   01_build_dataset.ipynb
   02_train_models.ipynb
   03_evaluate.ipynb
+  04_deploy_and_monitor.ipynb
 ```
 
 ---

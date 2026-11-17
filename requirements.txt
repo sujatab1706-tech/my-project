@@ -10,4 +10,10 @@ tensorflow
 pytesseract      # also needs the Tesseract program: apt-get install tesseract-ocr / brew install tesseract
 # Step 3 (evaluation)
 scikit-learn
-# Step 4 (API) will add: fastapi, uvicorn, evidently
+# Step 4 (API + monitoring); the API alone only needs requirements-api.txt
+fastapi
+uvicorn
+python-multipart
+httpx
+pytest
+evidently
